@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X68K FM Synthesizer Visualizer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Orbitron', monospace;
+            background: #000;
+            color: #0ff;
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* CRT効果 */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 255, 0.03) 0px,
+                transparent 1px,
+                transparent 2px,
+                rgba(0, 255, 255, 0.03) 3px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: clamp(1.5rem, 4vw, 3rem);
+            font-weight: 900;
+            text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+            margin-bottom: 30px;
+            letter-spacing: 0.1em;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+            to { text-shadow: 0 0 30px #0ff, 0 0 50px #0ff, 0 0 60px #0ff; }
+        }
+        
+        /* ファイルセレクター */
+        .file-selector {
+            background: linear-gradient(135deg, #001122 0%, #002244 100%);
+            border: 2px solid #0ff;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5), inset 0 0 20px rgba(0, 255, 255, 0.1);
+        }
+        
+        .file-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .file-item {
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #0ff;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 5px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: "";
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #0ff, #f0f, #0ff);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: -1;
+            border-radius: 5px;
+        }
+        
+        .file-item:hover {
+            background: rgba(0, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 255, 255, 0.5);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item.active {
+            background: rgba(0, 255, 255, 0.4);
+            border-color: #f0f;
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        /* コントロールパネル */
+        .controls {
+            background: linear-gradient(135deg, #002244 0%, #003366 100%);
+            border: 2px solid #0ff;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+        }
+        
+        .control-btn {
+            background: linear-gradient(135deg, #0ff 0%, #00a 100%);
+            border: none;
+            color: #fff;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 25px;
+            transition: all 0.3s;
+            font-family: 'Orbitron', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            box-shadow: 0 4px 15px rgba(0, 255, 255, 0.4);
+        }
+        
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 255, 255, 0.6);
+            background: linear-gradient(135deg, #0ff 0%, #f0f 100%);
+        }
+        
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        
+        .time-display {
+            font-size: 18px;
+            font-weight: bold;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        /* ビジュアライザー */
+        .visualizer-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            min-height: 400px;
+        }
+        
+        .visualizer-section {
+            background: linear-gradient(135deg, #001122 0%, #002244 100%);
+            border: 2px solid #0ff;
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #fff;
+            text-shadow: 0 0 10px currentColor;
+        }
+        
+        .fm-channels {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .channel {
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid #0ff;
+            border-radius: 5px;
+            padding: 10px;
+            text-align: center;
+            position: relative;
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
+        .channel-label {
+            font-size: 12px;
+            color: #0ff;
+            margin-bottom: 5px;
+        }
+        
+        .channel-meter {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .channel-level {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, #0ff, #f0f);
+            transition: height 0.05s;
+            box-shadow: 0 0 10px currentColor;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 200px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.5);
+        }
+        
+        /* レスポンシブ対応 */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 10px;
+            }
+            
+            .file-list {
+                grid-template-columns: 1fr;
+            }
+            
+            .fm-channels {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .control-btn {
+                width: 100%;
+                max-width: 300px;
+            }
+        }
+        
+        /* 追加のアニメーション効果 */
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .playing .section-title::before {
+            content: "▶ ";
+            color: #f0f;
+            animation: pulse 1s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <h1>X68K FM SYNTHESIZER VISUALIZER</h1>
+        
+        <div class="file-selector">
+            <h2 style="margin-bottom: 15px; font-size: 20px;">SELECT TRACK</h2>
+            <div class="file-list" id="fileList">
+                <!-- ファイルリストはJavaScriptで動的に生成 -->
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="control-btn" id="playBtn">PLAY</button>
+            <button class="control-btn" id="pauseBtn">PAUSE</button>
+            <button class="control-btn" id="stopBtn">STOP</button>
+            <div class="time-display" id="timeDisplay">00:00 / 00:00</div>
+        </div>
+        
+        <div class="visualizer-container">
+            <div class="visualizer-section" id="fmSection">
+                <h3 class="section-title">FM SYNTHESIS (YM2151)</h3>
+                <div class="fm-channels" id="fmChannels">
+                    <!-- 8チャンネル分のメーター -->
+                </div>
+                <canvas id="fmWaveform"></canvas>
+            </div>
+            
+            <div class="visualizer-section" id="adpcmSection">
+                <h3 class="section-title">ADPCM (MSM6258)</h3>
+                <canvas id="adpcmSpectrum"></canvas>
+                <canvas id="adpcmWaveform"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // プリセット楽曲リスト（実際のファイルパスに置き換えてください）
+        const presetTracks = [
+            { name: 'Track 01 - H.A.L.T ON', file: './music/track01.wav' },
+            { name: 'Track 02 - StarDust Prism', file: './music/track02.wav' },
+            { name: 'Track 03 - NEON', file: './music/track03.wav' },
+            { name: 'Track 04 - Digital Tears', file: './music/track04.wav' },
+            { name: 'Track 05 - Eternal Loop', file: './music/track05.wav' },
+            { name: 'Track 06 - iCEBOX', file: './music/track06.wav' }
+        ];
+        
+        // グローバル変数
+        let audioContext;
+        let audioBuffer;
+        let sourceNode;
+        let analyserNodes = [];
+        let isPlaying = false;
+        let startTime = 0;
+        let pauseTime = 0;
+        let currentTrack = null;
+        
+        // 初期化
+        function init() {
+            // ファイルリストの生成
+            const fileList = document.getElementById('fileList');
+            presetTracks.forEach((track, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.textContent = track.name;
+                item.dataset.file = track.file;
+                item.dataset.index = index;
+                item.addEventListener('click', selectTrack);
+                fileList.appendChild(item);
+            });
+            
+            // FMチャンネルメーターの生成
+            const fmChannels = document.getElementById('fmChannels');
+            for (let i = 0; i < 8; i++) {
+                const channel = document.createElement('div');
+                channel.className = 'channel';
+                channel.innerHTML = `
+                    <div class="channel-label">CH ${i + 1}</div>
+                    <div class="channel-meter">
+                        <div class="channel-level" id="ch${i}Level"></div>
+                    </div>
+                `;
+                fmChannels.appendChild(channel);
+            }
+            
+            // イベントリスナー
+            document.getElementById('playBtn').addEventListener('click', play);
+            document.getElementById('pauseBtn').addEventListener('click', pause);
+            document.getElementById('stopBtn').addEventListener('click', stop);
+            
+            // Canvas初期化
+            initCanvases();
+        }
+        
+        // Canvas初期化
+        function initCanvases() {
+            const canvases = ['fmWaveform', 'adpcmSpectrum', 'adpcmWaveform'];
+            canvases.forEach(id => {
+                const canvas = document.getElementById(id);
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth * 2;
+                canvas.height = canvas.offsetHeight * 2;
+                ctx.scale(2, 2);
+            });
+        }
+        
+        // トラック選択
+        async function selectTrack(e) {
+            const item = e.target;
+            const file = item.dataset.file;
+            
+            // アクティブ状態の更新
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            
+            currentTrack = file;
+            
+            // 音声ファイルの読み込み
+            try {
+                const response = await fetch(file);
+                const arrayBuffer = await response.arrayBuffer();
+                
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                stop(); // 既存の再生を停止
+                
+            } catch (error) {
+                console.error('ファイルの読み込みに失敗しました:', error);
+                alert('ファイルの読み込みに失敗しました。ファイルパスを確認してください。');
+            }
+        }
+        
+        // 再生
+        function play() {
+            if (!audioBuffer || isPlaying) return;
+            
+            sourceNode = audioContext.createBufferSource();
+            sourceNode.buffer = audioBuffer;
+            
+            // アナライザーノードの作成（8つのFMチャンネル + 1つのADPCM）
+            analyserNodes = [];
+            for (let i = 0; i < 9; i++) {
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0.8;
+                analyserNodes.push(analyser);
+            }
+            
+            // 各チャンネルに接続（簡略化のため、全チャンネルに同じ信号を送る）
+            analyserNodes.forEach(analyser => {
+                sourceNode.connect(analyser);
+                analyser.connect(audioContext.destination);
+            });
+            
+            sourceNode.connect(audioContext.destination);
+            
+            const offset = pauseTime;
+            sourceNode.start(0, offset);
+            startTime = audioContext.currentTime - offset;
+            isPlaying = true;
+            
+            // ビジュアライザーの開始
+            document.getElementById('fmSection').classList.add('playing');
+            document.getElementById('adpcmSection').classList.add('playing');
+            animate();
+            
+            sourceNode.onended = () => {
+                if (isPlaying) {
+                    stop();
+                }
+            };
+        }
+        
+        // 一時停止
+        function pause() {
+            if (!isPlaying) return;
+            
+            pauseTime = audioContext.currentTime - startTime;
+            stop();
+        }
+        
+        // 停止
+        function stop() {
+            if (sourceNode) {
+                sourceNode.stop();
+                sourceNode.disconnect();
+                sourceNode = null;
+            }
+            
+            analyserNodes.forEach(analyser => analyser.disconnect());
+            analyserNodes = [];
+            
+            isPlaying = false;
+            pauseTime = 0;
+            
+            document.getElementById('fmSection').classList.remove('playing');
+            document.getElementById('adpcmSection').classList.remove('playing');
+            
+            // メーターをリセット
+            for (let i = 0; i < 8; i++) {
+                document.getElementById(`ch${i}Level`).style.height = '0%';
+            }
+        }
+        
+        // アニメーションループ
+        function animate() {
+            if (!isPlaying) return;
+            
+            // 時間表示の更新
+            updateTimeDisplay();
+            
+            // FMチャンネルの可視化
+            for (let i = 0; i < 8; i++) {
+                if (analyserNodes[i]) {
+                    const dataArray = new Uint8Array(analyserNodes[i].frequencyBinCount);
+                    analyserNodes[i].getByteFrequencyData(dataArray);
+                    
+                    // 特定の周波数帯域を抽出してレベル表示
+                    const start = Math.floor(i * dataArray.length / 8);
+                    const end = Math.floor((i + 1) * dataArray.length / 8);
+                    let sum = 0;
+                    for (let j = start; j < end; j++) {
+                        sum += dataArray[j];
+                    }
+                    const average = sum / (end - start);
+                    const level = (average / 255) * 100;
+                    
+                    document.getElementById(`ch${i}Level`).style.height = `${level}%`;
+                }
+            }
+            
+            // 波形描画
+            drawWaveform('fmWaveform', analyserNodes[0]);
+            drawSpectrum('adpcmSpectrum', analyserNodes[8]);
+            drawWaveform('adpcmWaveform', analyserNodes[8]);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // 波形描画
+        function drawWaveform(canvasId, analyser) {
+            if (!analyser) return;
+            
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width / 2;
+            const height = canvas.height / 2;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteTimeDomainData(dataArray);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#0ff';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0ff';
+            
+            ctx.beginPath();
+            const sliceWidth = width / dataArray.length;
+            let x = 0;
+            
+            for (let i = 0; i < dataArray.length; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * height / 2;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            ctx.stroke();
+        }
+        
+        // スペクトラム描画
+        function drawSpectrum(canvasId, analyser) {
+            if (!analyser) return;
+            
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width / 2;
+            const height = canvas.height / 2;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+            
+            const barWidth = width / dataArray.length * 2.5;
+            let x = 0;
+            
+            for (let i = 0; i < dataArray.length; i++) {
+                const barHeight = (dataArray[i] / 255) * height;
+                
+                const gradient = ctx.createLinearGradient(0, height, 0, height - barHeight);
+                gradient.addColorStop(0, '#0ff');
+                gradient.addColorStop(0.5, '#f0f');
+                gradient.addColorStop(1, '#ff0');
+                
+                ctx.fillStyle = gradient;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = gradient;
+                ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+                
+                x += barWidth + 1;
+            }
+        }
+        
+        // 時間表示の更新
+        function updateTimeDisplay() {
+            if (!audioBuffer || !isPlaying) return;
+            
+            const currentTime = audioContext.currentTime - startTime;
+            const duration = audioBuffer.duration;
+            
+            const formatTime = (time) => {
+                const minutes = Math.floor(time / 60);
+                const seconds = Math.floor(time % 60);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            };
+            
+            document.getElementById('timeDisplay').textContent = 
+                `${formatTime(currentTime)} / ${formatTime(duration)}`;
+        }
+        
+        // ウィンドウリサイズ時の処理
+        window.addEventListener('resize', () => {
+            initCanvases();
+        });
+        
+        // 初期化実行
+        init();
+    </script>
+</body>
+</html>
